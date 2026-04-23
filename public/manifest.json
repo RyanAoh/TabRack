@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TabRack",
   "version": "1.0.0",
-  "description": "Next-gen smart tab management extension.",
+  "description": "Manage tabs, save memory, and read smarter with AI.",
   "permissions": [
     "tabs",
     "storage",
@@ -55,12 +55,6 @@
       "suggested_key": {
         "default": "Ctrl+Shift+L"
       }
-    },
-    "open-palette": {
-      "suggested_key": {
-        "default": "Alt+K"
-      },
-      "description": "Open Command Palette"
     }
   }
 }

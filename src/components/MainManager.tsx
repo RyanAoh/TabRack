@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { cn, normalizeUrl } from '@/lib/utils';
 import { useTabs } from '@/src/hooks/useTabs';
 import { TabItem } from '@/src/components/TabItem';
 import { ReadLaterList } from '@/src/components/ReadLaterList';
-import { CommandPalette } from '@/src/components/CommandPalette';
+// CommandPalette removed
 import { ModeToggle } from '@/src/components/ModeToggle';
 import { useLanguage } from '@/src/components/LanguageProvider';
 import { db } from '@/src/lib/db';
@@ -27,7 +27,9 @@ import {
   Menu,
   Scissors,
   X,
-  Github
+  Github,
+  Download,
+  Upload
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -39,7 +41,8 @@ import { useCategories } from '@/src/hooks/useCategories';
 
 export default function MainManager() {
   const { tabs, closeTab, focusTab, isExtension } = useTabs();
-  const { t, language, setLanguage } = useLanguage();
+  const { t, language, resolvedLanguage, setLanguage } = useLanguage();
+  const [activeTab, setActiveTab] = useState('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewModeState] = useState<'compact' | 'expanded'>('expanded');
   const [dedupeDialogOpen, setDedupeDialogOpen] = useState(false);
@@ -49,6 +52,58 @@ export default function MainManager() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiConfig, setAiConfig] = useState<AIConfig>(getAIConfig());
   const { categories, updateCategories } = useCategories();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExportData = async () => {
+    try {
+      const readLaterItems = await db.readLater.toArray();
+      const categoriesData = localStorage.getItem('tabrack-categories');
+      
+      const backupData = {
+        readLater: readLaterItems,
+        categories: categoriesData ? JSON.parse(categoriesData) : null
+      };
+      
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tabrack_backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Export failed:', e);
+      toast.error('Export failed');
+    }
+  };
+
+  const handleImportData = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const backupData = JSON.parse(text);
+      
+      if (backupData.readLater && Array.isArray(backupData.readLater)) {
+        await db.readLater.clear();
+        await db.readLater.bulkAdd(backupData.readLater);
+      }
+      
+      if (backupData.categories && Array.isArray(backupData.categories)) {
+        updateCategories(backupData.categories);
+      }
+      
+      toast.success(t('import_success'));
+    } catch (err) {
+      console.error('Import failed:', err);
+      toast.error(t('import_failed'));
+    }
+    
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   // Load saved preferences
   useEffect(() => {
@@ -124,6 +179,8 @@ export default function MainManager() {
   }, [tabs, searchQuery]);
 
   const handleDedupe = async () => {
+    setSearchQuery('');
+    setActiveTab('active');
     const urlGroups = new Map<string, typeof tabs>();
     
     tabs.forEach(t => {
@@ -182,6 +239,8 @@ export default function MainManager() {
   };
 
   const handleDiscard = async () => {
+    setSearchQuery('');
+    setActiveTab('active');
     if (isExtension) {
       const inactive = tabs.filter(t => !t.active && !t.discarded);
       for (const t of inactive) {
@@ -248,11 +307,6 @@ export default function MainManager() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <div className="flex items-center gap-1 shrink-0 text-muted-foreground">
-              <span className="bg-card border border-border rounded px-1.5 py-0.5 text-[10px] font-mono shadow-sm">Alt</span>
-              <span className="text-[10px]">+</span>
-              <span className="bg-card border border-border rounded px-1.5 py-0.5 text-[10px] font-mono shadow-sm">K</span>
-            </div>
           </div>
         </div>
 
@@ -296,6 +350,8 @@ export default function MainManager() {
           size="sm" 
           className={cn("h-7 text-xs flex items-center gap-1 transition-colors", groupMode !== 'none' ? "bg-primary hover:bg-primary/90 text-primary-foreground" : "bg-muted hover:bg-muted/80")} 
           onClick={() => {
+            setSearchQuery('');
+            setActiveTab('active');
             if (groupMode === 'none') setGroupMode('base');
             else if (groupMode === 'base') setGroupMode('full');
             else setGroupMode('none');
@@ -309,7 +365,33 @@ export default function MainManager() {
       </div>
 
       {/* Main Content */}
-      <Tabs defaultValue="active" className="flex-1 flex flex-col overflow-hidden px-6 pt-4">
+      {searchQuery ? (
+        <div className="flex-1 overflow-hidden px-6 pt-4 flex flex-col">
+          <ScrollArea className="flex-1 pr-4 pb-4">
+            {filteredTabs.length > 0 && (
+              <div className="mb-8">
+                <div className="text-xs font-semibold text-muted-foreground mb-4 uppercase tracking-wider">{t('all_tabs')}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+                  {filteredTabs.map((tab) => (
+                    <TabItem 
+                      key={tab.id} 
+                      tab={tab} 
+                      onClose={closeTab} 
+                      onFocus={focusTab}
+                      compact={isSidePanel || viewMode === 'compact'} 
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground mb-4 uppercase tracking-wider">{t('read_later')}</div>
+              <ReadLaterList searchQuery={searchQuery} hideFilters={true} viewMode={isSidePanel ? 'compact' : viewMode} />
+            </div>
+          </ScrollArea>
+        </div>
+      ) : (
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden px-6 pt-4">
         <TabsList className="w-full justify-start h-auto bg-transparent p-0 gap-6 border-b border-border">
           <TabsTrigger 
             value="active" 
@@ -461,10 +543,11 @@ export default function MainManager() {
 
         <TabsContent value="reading" className="flex-1 overflow-hidden mt-4">
           <ScrollArea className="h-full pr-4 pb-4">
-            <ReadLaterList />
+            <ReadLaterList viewMode={isSidePanel ? 'compact' : viewMode} />
           </ScrollArea>
         </TabsContent>
       </Tabs>
+      )}
 
       {/* Footer Info */}
       <footer className="h-10 shrink-0 bg-card border-t border-border px-6 flex items-center justify-between text-xs text-muted-foreground">
@@ -511,7 +594,7 @@ export default function MainManager() {
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setDedupeDialogOpen(false)}>{t('cancel')}</Button>
             <Button onClick={confirmDedupe} variant="default" disabled={selectedDedupeIds.size === 0}>
-              {language === 'zh' ? `${t('close_selected')} (${selectedDedupeIds.size})` : `Close ${selectedDedupeIds.size} Selected`}
+              {resolvedLanguage === 'zh' ? `${t('close_selected')} (${selectedDedupeIds.size})` : `Close ${selectedDedupeIds.size} Selected`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -573,31 +656,6 @@ export default function MainManager() {
                 <option value="full">{t('by_full_domain')}</option>
               </select>
             </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-foreground">{t('cmd_palette')}</p>
-                <p className="text-xs text-muted-foreground">{t('cmd_palette_desc')}</p>
-              </div>
-              <kbd className="px-2 py-1 bg-muted border border-border text-foreground font-mono rounded text-[11px] shadow-sm">
-                Alt + K
-              </kbd>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-foreground">{t('auto_discard')}</p>
-                <p className="text-xs text-muted-foreground">{t('auto_discard_desc')}</p>
-              </div>
-              <select 
-                className="px-3 py-1.5 text-sm rounded-md border border-border bg-background text-foreground shadow-sm outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="30">30 minutes</option>
-                <option value="60">1 hour</option>
-                <option value="120">2 hours</option>
-                <option value="never">Never</option>
-              </select>
-            </div>
 
             <div className="border-t border-border mt-2 pt-4">
               <div className="flex items-center justify-between mb-3">
@@ -633,6 +691,30 @@ export default function MainManager() {
                   />
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1">{t('press_enter_to_add') || 'Press Enter to add.'}</p>
+              </div>
+            </div>
+
+            <div className="border-t border-border mt-2 pt-4">
+              <h4 className="text-sm font-semibold mb-1">{t('data_backup') || 'Data Backup & Restore'}</h4>
+              <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{t('data_backup_desc')}</p>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button variant="outline" className="flex-1 text-xs h-9 flex items-center gap-2 bg-background hover:bg-muted" onClick={handleExportData}>
+                  <Download className="w-3.5 h-3.5" />
+                  {t('export_data') || 'Export Data'}
+                </Button>
+                
+                <Button variant="outline" className="flex-1 text-xs h-9 flex items-center gap-2 bg-background hover:bg-muted" onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="w-3.5 h-3.5" />
+                  {t('import_data') || 'Import Data'}
+                </Button>
+                <input 
+                  type="file" 
+                  accept=".json" 
+                  ref={fileInputRef} 
+                  onChange={handleImportData} 
+                  className="hidden" 
+                />
               </div>
             </div>
 
@@ -709,7 +791,7 @@ export default function MainManager() {
       </Dialog>
 
       {/* Overlays */}
-      <CommandPalette onDedupeRequest={handleDedupe} />
+
     </div>
   );
 }

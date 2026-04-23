@@ -2,8 +2,6 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
 
@@ -53,13 +51,3 @@ jobs:
         with:
           files: tabrack-extension.zip
           generate_release_notes: true
-
-      - name: Create Release (Main Branch)
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: Latest (Main)
-          files: tabrack-extension.zip
-          prerelease: true
-          make_latest: true

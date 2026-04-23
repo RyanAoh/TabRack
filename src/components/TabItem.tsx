@@ -72,16 +72,12 @@ export function TabItem({ tab, onClose, onFocus, compact }: TabItemProps) {
       const allExisting = await db.readLater.toArray();
       const existing = allExisting.find(e => normalizeUrl(e.url) === normUrl || e.url === tab.url);
       
-      if (!existing) {
-        await db.readLater.add(newItem);
-      } else if (existing.id !== undefined) {
-        await db.readLater.update(existing.id, {
-          addedAt: newItem.addedAt,
-          content: newItem.content || existing.content,
-          summary: newItem.summary || existing.summary,
-          tags: category && category !== 'uncategorized' ? [category] : []
-        });
+      if (existing) {
+        toast.warning(t('already_in_read_later') || 'Already in read later');
+        return;
       }
+      
+      await db.readLater.add(newItem);
       onClose(tab.id);
       toast.success(t('read_later'));
     } catch (e) {

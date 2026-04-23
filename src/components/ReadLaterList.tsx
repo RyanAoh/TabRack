@@ -17,12 +17,25 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 
-export function ReadLaterList() {
-  const items = useLiveQuery(() => db.readLater.orderBy('addedAt').reverse().toArray());
+export function ReadLaterList({ searchQuery = '', hideFilters = false, viewMode = 'expanded' }: { searchQuery?: string, hideFilters?: boolean, viewMode?: 'compact' | 'expanded' }) {
+  const allItems = useLiveQuery(() => db.readLater.orderBy('addedAt').reverse().toArray());
+  
+  const items = useMemo(() => {
+    if (!allItems) return [];
+    if (!searchQuery) return allItems;
+    const query = searchQuery.toLowerCase();
+    return allItems.filter(i => 
+      (i.title && i.title.toLowerCase().includes(query)) || 
+      (i.url && i.url.toLowerCase().includes(query)) ||
+      (i.summary && i.summary.toLowerCase().includes(query))
+    );
+  }, [allItems, searchQuery]);
+
   const { t, resolvedLanguage } = useLanguage();
   const [loadingIds, setLoadingIds] = useState<Set<number>>(new Set());
   const [expandedSummaries, setExpandedSummaries] = useState<Set<number>>(new Set());
   const { categories: CATEGORIES } = useCategories();
+  const [activeFilter, setActiveFilter] = useState<string>('all');
 
   const groupedItems = useMemo(() => {
     if (!items) return {};
@@ -99,21 +112,58 @@ export function ReadLaterList() {
     );
   }
 
-  return (
-    <div className="flex flex-col gap-8">
-      {CATEGORIES.map((category) => {
-        const categoryItems = groupedItems[category] || [];
-        if (categoryItems.length === 0) return null;
+  const filteredCategories = activeFilter === 'all' 
+    ? CATEGORIES 
+    : CATEGORIES.filter(c => c === activeFilter);
 
-        return (
-          <div key={category} className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 pb-1">
-              <Badge variant="secondary" className="text-xs px-2 py-0 border-transparent bg-muted text-muted-foreground">
+  return (
+    <div className="flex flex-col gap-6 w-full max-w-full">
+      {!hideFilters && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          <Button
+            variant={activeFilter === 'all' ? 'default' : 'secondary'}
+            size="sm"
+            className="h-8 rounded-full px-4 text-[13px] whitespace-nowrap shrink-0"
+            onClick={() => setActiveFilter('all')}
+          >
+            {resolvedLanguage === 'zh' ? '全部' : 'All'}
+            <span className="ml-1.5 opacity-60 text-xs">{items.length}</span>
+          </Button>
+          {CATEGORIES.map(category => {
+            const count = groupedItems[category]?.length || 0;
+            if (count === 0 && activeFilter !== category) return null;
+            return (
+              <Button
+                key={category}
+                variant={activeFilter === category ? 'default' : 'secondary'}
+                size="sm"
+                className={cn("h-8 rounded-full px-4 text-[13px] whitespace-nowrap shrink-0", activeFilter !== category && "bg-muted/50 hover:bg-muted")}
+                onClick={() => setActiveFilter(category)}
+              >
                 {t(category as any)}
-              </Badge>
-              <span className="text-[11px] text-muted-foreground/60">{categoryItems.length}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+                <span className="ml-1.5 opacity-60 text-xs">{count}</span>
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className={cn(
+        activeFilter === 'all' 
+          ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start"
+          : "flex flex-col gap-6"
+      )}>
+        {filteredCategories.map((category) => {
+          const categoryItems = groupedItems[category] || [];
+          if (categoryItems.length === 0) return null;
+
+          // When 'all' is selected, wrap in a panel like 'all tabs' page
+          const isAllFilter = activeFilter === 'all';
+
+          const content = (
+            <div className={cn(
+              isAllFilter ? "p-2 flex flex-col gap-1" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start"
+            )}>
               <AnimatePresence>
                 {categoryItems.map((item) => (
                   <motion.div
@@ -121,27 +171,51 @@ export function ReadLaterList() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="group flex flex-col justify-between p-4 bg-card border border-border rounded-xl cursor-pointer hover:shadow-md hover:border-primary/20 transition-all relative overflow-hidden"
+                    className={cn(
+                      "group flex flex-col p-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors border border-transparent",
+                      expandedSummaries.has(item.id!) && "bg-muted/30"
+                    )}
                     onClick={() => openItem(item.url)}
                   >
-                    <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2.5 w-full">
                       <img
                         src={item.faviconUrl || 'https://www.google.com/favicon.ico'}
-                        className="w-5 h-5 rounded flex-shrink-0"
+                        className="w-4 h-4 rounded-sm flex-shrink-0"
                         alt=""
                         referrerPolicy="no-referrer"
                       />
-                      <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                      
+                      <div className="flex-1 min-w-0 pr-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-[13px] text-foreground truncate">
+                            {item.title}
+                          </p>
+                        </div>
+                        {viewMode !== 'compact' && (
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              {item.url}
+                            </p>
+                            {item.scrollPercentage > 0 && (
+                              <div className="w-16 bg-muted rounded-full h-1 ml-2">
+                                <div className="bg-primary h-1 rounded-full" style={{ width: `${item.scrollPercentage}%` }} />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                         <Select 
                           value={(item.tags && item.tags.length > 0 && CATEGORIES.includes(item.tags[0])) ? item.tags[0] : 'uncategorized'} 
                           onValueChange={(val) => item.id && updateCategory(item.id, val)}
                         >
-                          <SelectTrigger title={t('change_category')} className="h-7 px-2 text-[11px] w-fit min-w-[70px] bg-transparent border-transparent hover:bg-muted font-medium focus:ring-0">
-                            <SelectValue>
+                          <SelectTrigger title={t('change_category')} className="h-7 px-2 text-[11px] w-auto max-w-[100px] bg-transparent border-transparent hover:bg-muted font-medium focus:ring-0 [&>svg]:hidden">
+                            <div className="truncate text-left w-full">
                               {t(((item.tags && item.tags.length > 0 && CATEGORIES.includes(item.tags[0])) ? item.tags[0] : 'uncategorized') as any)}
-                            </SelectValue>
+                            </div>
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent align="end">
                             {CATEGORIES.map(cat => (
                               <SelectItem key={cat} value={cat} className="text-[12px]">
                                 {t(cat as any)}
@@ -150,108 +224,101 @@ export function ReadLaterList() {
                           </SelectContent>
                         </Select>
 
-                        {!item.summary && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-primary hover:bg-primary/10"
-                            title={t('summarize')}
-                            onClick={(e) => generateSummary(e, item)}
-                            disabled={item.id ? loadingIds.has(item.id) : false}
-                          >
-                            {item.id && loadingIds.has(item.id) ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Sparkles className="h-3.5 w-3.5" />
-                            )}
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn("h-7 w-7 transition-colors", item.summary ? "text-primary hover:text-primary" : "text-muted-foreground hover:text-primary")}
+                          title={t('summarize')}
+                          onClick={(e) => {
+                            if (item.summary) {
+                              toggleSummary(e, item.id!);
+                            } else {
+                              generateSummary(e, item);
+                            }
+                          }}
+                          disabled={item.id ? loadingIds.has(item.id) : false}
+                        >
+                          {item.id && loadingIds.has(item.id) ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3 w-3" />
+                          )}
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
                           title={t('delete')}
-                  className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    item.id && removeItem(item.id);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-            
-            <div className="flex-1 min-w-0 pr-2 flex flex-col justify-between">
-              <div>
-                <p className="text-[14px] font-medium text-foreground leading-snug line-clamp-2">{item.title}</p>
-                {item.summary && (
-                  <div className="mt-3 flex flex-col" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-between">
-                      <div 
-                        className="flex items-center gap-1.5 text-[11px] font-medium text-primary cursor-pointer w-fit hover:opacity-80 transition-opacity"
-                        onClick={(e) => toggleSummary(e, item.id!)}
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        {t('ai_summary')}
-                        <ChevronDown className={cn("w-3 h-3 transition-transform duration-200", expandedSummaries.has(item.id!) && "rotate-180")} />
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            item.id && removeItem(item.id);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       </div>
-                      
-                      <AnimatePresence>
-                        {expandedSummaries.has(item.id!) && (
-                          <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                          >
+                    </div>
+
+                    <AnimatePresence>
+                      {expandedSummaries.has(item.id!) && item.summary && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="overflow-hidden w-full mt-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="text-[12px] text-muted-foreground bg-muted/40 p-2.5 rounded-md border border-border/50 leading-relaxed shadow-sm whitespace-pre-wrap flex justify-between gap-4">
+                            <div className="flex-1">{item.summary}</div>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-5 w-5 hover:bg-muted text-muted-foreground hover:text-foreground"
+                              className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
                               title={t('regenerate')}
                               onClick={(e) => generateSummary(e, item)}
                               disabled={item.id ? loadingIds.has(item.id) : false}
                             >
                               <RefreshCw className={cn("h-3 w-3", item.id && loadingIds.has(item.id) && "animate-spin")} />
                             </Button>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                    <AnimatePresence initial={false}>
-                      {expandedSummaries.has(item.id!) && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="mt-2 text-[12px] text-muted-foreground bg-muted/40 p-2.5 rounded-md border border-border/50 leading-relaxed shadow-sm whitespace-pre-wrap">
-                            {item.summary}
                           </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          );
+
+          if (isAllFilter) {
+            return (
+              <div key={category} className="bg-card border border-border rounded-xl flex flex-col overflow-hidden shadow-sm h-fit">
+                <div className="px-4 py-3 border-b border-border bg-[#fcfcfd] dark:bg-[#151a23] flex justify-between items-center group">
+                  <span className="text-[13px] font-semibold text-foreground truncate pr-2">
+                    {t(category as any)}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground/60">{categoryItems.length}</span>
                   </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2 mt-3">
-                <p className="text-[11px] text-muted-foreground truncate">
-                  {item.url}
-                </p>
-              </div>
-              {item.scrollPercentage > 0 && (
-                <div className="w-full bg-muted rounded-full h-1 mt-3">
-                  <div className="bg-primary h-1 rounded-full" style={{ width: `${item.scrollPercentage}%` }} />
                 </div>
-              )}
+                {content}
+              </div>
+            );
+          }
+
+          return (
+            <div key={category} className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 pb-1">
+                <Badge variant="secondary" className="text-xs px-2 py-0 border-transparent bg-muted text-muted-foreground">
+                  {t(category as any)}
+                </Badge>
+                <span className="text-[11px] text-muted-foreground/60">{categoryItems.length}</span>
+              </div>
+              {content}
             </div>
-          </motion.div>
-        ))}
-      </AnimatePresence>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

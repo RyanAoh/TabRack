@@ -6,7 +6,7 @@ type ResolvedLanguage = 'en' | 'zh';
 const translations = {
   en: {
     title: 'TabRack',
-    search_placeholder: 'Search tabs or type commands...',
+    search_placeholder: 'Search tabs or read later...',
     dedupe: 'Deduplication',
     memory_release: 'Memory Release',
     by_domain: 'By Domain',
@@ -21,19 +21,16 @@ const translations = {
     view_mode_desc: 'Choose how tabs are displayed',
     group_mode: 'Default Group Mode',
     group_mode_desc: 'Choose how tabs are grouped by default',
-    auto_discard: 'Auto-Discard Timeout',
-    auto_discard_desc: 'Time before sleeping tabs',
     expanded: 'Expanded',
     compact: 'Compact',
     done: 'Done',
-    cmd_palette: 'Global Command Palette',
-    cmd_palette_desc: 'Shortcut to open the palette',
     no_tabs: 'No tabs found',
     tabs_count: 'Tabs',
     active_tabs: 'Active Tabs',
     slept_tabs: 'Slept',
     all_tabs: 'All Tabs',
     read_later: 'Read Later',
+    already_in_read_later: 'Already in read later',
     window: 'Window',
     close_all_tabs: 'Close all tabs',
     close_duplicate_tabs: 'Close Duplicate Tabs?',
@@ -80,10 +77,16 @@ const translations = {
     change_category: 'Change Category',
     regenerate: 'Regenerate',
     delete: 'Delete',
+    data_backup: 'Data Backup & Restore',
+    data_backup_desc: 'Export your Read Later list and settings, or import them from a backup file.',
+    export_data: 'Export Data',
+    import_data: 'Import Data',
+    import_success: 'Data imported successfully',
+    import_failed: 'Failed to import data',
   },
   zh: {
     title: 'TabRack',
-    search_placeholder: '搜索标签页或输入命令...',
+    search_placeholder: '搜索标签页或稍后阅读...',
     dedupe: '一键去重',
     memory_release: '释放内存',
     by_domain: '域名聚合',
@@ -98,19 +101,16 @@ const translations = {
     view_mode_desc: '选择标签页列表的显示密度',
     group_mode: '默认聚合模式',
     group_mode_desc: '选择标签页的默认分组方式',
-    auto_discard: '自动休眠超时',
-    auto_discard_desc: '后台标签多长时间后自动释放内存',
-    expanded: '宽松排版 (Expanded)',
-    compact: '紧凑排版 (Compact)',
+    expanded: '宽松排版',
+    compact: '紧凑排版',
     done: '完成',
-    cmd_palette: '全局命令面板',
-    cmd_palette_desc: '用于随时唤起面板的快捷键',
     no_tabs: '抱歉，没有找到标签页',
     tabs_count: '个标签',
     active_tabs: '活跃',
     slept_tabs: '已休眠',
     all_tabs: '所有标签页',
     read_later: '稍后阅读',
+    already_in_read_later: '已在稍后阅读中',
     window: '窗口',
     close_all_tabs: '关闭所有标签页',
     close_duplicate_tabs: '关闭重复的标签页？',
@@ -157,6 +157,12 @@ const translations = {
     change_category: '修改分类',
     regenerate: '重新生成',
     delete: '删除',
+    data_backup: '数据备份与恢复',
+    data_backup_desc: '导出您的稍后阅读列表和设置，或从备份文件中恢复。这对于手动更新插件版本非常有用。',
+    export_data: '导出数据',
+    import_data: '导入恢复',
+    import_success: '数据导入成功',
+    import_failed: '导入数据失败',
   }
 };
 
@@ -176,6 +182,12 @@ type Translations = typeof translations.en & {
   change_category?: string;
   regenerate?: string;
   delete?: string;
+  data_backup?: string;
+  data_backup_desc?: string;
+  export_data?: string;
+  import_data?: string;
+  import_success?: string;
+  import_failed?: string;
 };
 type TranslationKey = keyof Translations;
 
@@ -201,16 +213,23 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [resolvedLanguage, setResolvedLanguage] = useState<ResolvedLanguage>('en');
 
   useEffect(() => {
-    if (language === 'system') {
-      const browserLang = navigator.language.toLowerCase();
-      if (browserLang.startsWith('zh')) {
-        setResolvedLanguage('zh');
+    const handleLanguageChange = () => {
+      if (language === 'system') {
+        const browserLang = navigator.language.toLowerCase();
+        if (browserLang.startsWith('zh')) {
+          setResolvedLanguage('zh');
+        } else {
+          setResolvedLanguage('en');
+        }
       } else {
-        setResolvedLanguage('en');
+        setResolvedLanguage(language);
       }
-    } else {
-      setResolvedLanguage(language);
-    }
+    };
+
+    handleLanguageChange();
+
+    window.addEventListener('languagechange', handleLanguageChange);
+    return () => window.removeEventListener('languagechange', handleLanguageChange);
   }, [language]);
 
   const changeLanguage = (lang: Language) => {

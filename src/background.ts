@@ -1,6 +1,8 @@
 /**
  * TabRack Service Worker
  */
+import { db } from './lib/db';
+import { normalizeUrl } from '../lib/utils';
 
 // Basic tab state tracking
 let tabTree: chrome.tabs.Tab[] = [];
@@ -21,14 +23,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'complete') updateTabTree();
 });
 
-// Command palette listener
-chrome.commands.onCommand.addListener((command) => {
-  if (command === 'open-palette') {
-    // We can't directly open a UI from background, but we can send a message
-    // or coordinate with the sidepanel/active tab
-    chrome.runtime.sendMessage({ action: 'OPEN_PALETTE' });
-  }
-});
 
 // One-click deduplication logic
 export async function closeDuplicates() {
@@ -67,6 +61,30 @@ export async function discardInactiveTabs(minutes: number = 30) {
 async function saveToReadLater(tabId: number) {
   const tab = await chrome.tabs.get(tabId);
   if (!tab.url) return;
+
+  const normUrl = normalizeUrl(tab.url);
+  const allExisting = await db.readLater.toArray();
+  const existing = allExisting.find(e => normalizeUrl(e.url) === normUrl || e.url === tab.url);
+  
+  if (existing) {
+    const isZh = chrome.i18n.getUILanguage().toLowerCase().startsWith('zh');
+    const msg = isZh ? '已在稍后阅读中' : 'Already in read later';
+    chrome.scripting.executeScript({
+      target: { tabId },
+      func: (message) => {
+        alert(message);
+      },
+      args: [msg]
+    }).catch(e => {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: '/icon128.png', 
+          title: 'TabRack',
+          message: msg
+        });
+    });
+    return;
+  }
 
   let scrollPercentage = 0;
   try {
