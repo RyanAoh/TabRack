@@ -1,0 +1,66 @@
+{
+  "manifest_version": 3,
+  "name": "TabRack",
+  "version": "1.0.0",
+  "description": "Next-gen smart tab management extension.",
+  "permissions": [
+    "tabs",
+    "storage",
+    "sidePanel",
+    "tabGroups",
+    "windows",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": {
+    "16": "/icons/icon-small.png",
+    "48": "/icons/icon-small.png",
+    "128": "/icons/icon-small.png"
+  },
+  "action": {
+    "default_title": "Open TabRack",
+    "default_icon": {
+      "16": "/icons/icon-small.png",
+      "48": "/icons/icon-small.png",
+      "128": "/icons/icon-small.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["img/*", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L"
+      }
+    },
+    "open-palette": {
+      "suggested_key": {
+        "default": "Alt+K"
+      },
+      "description": "Open Command Palette"
+    }
+  }
+}
