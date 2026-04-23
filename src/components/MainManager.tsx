@@ -26,7 +26,8 @@ import {
   LayoutGrid,
   Menu,
   Scissors,
-  X
+  X,
+  Github
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -268,8 +269,13 @@ export default function MainManager() {
           </div>
           
           <div className="flex items-center gap-1 ml-4 border-l border-border pl-4">
+            <a href="https://github.com/RyanAoh/TabRack" target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Star on GitHub">
+                <Github className="h-4 w-4" />
+              </Button>
+            </a>
             <ModeToggle />
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setSettingsOpen(true)}>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title={t('settings')} onClick={() => setSettingsOpen(true)}>
               <Settings className="h-4 w-4" />
             </Button>
           </div>
