@@ -49,6 +49,34 @@ TabRack is a next-generation browser tab manager that helps you tame tab overloa
 
 4. **Settings (Settings Gear):** Configure viewing mode (Expanded or Compact) and UI language mappings.
 
+## 📥 Install from Releases (Easiest)
+
+1. Go to the [Releases](../../releases) page of this repository.
+2. Download the latest `tabrack-extension.zip` file attached to the release.
+3. Extract the downloaded `.zip` file to a folder on your computer.
+4. Open your browser and navigate to the extensions page (e.g., `chrome://extensions`).
+5. Enable **Developer mode** in the top right corner.
+6. Click the **"Load unpacked"** button in the top left and select the folder you just extracted.
+7. Pin TabRack to your toolbar and enjoy!
+
+## 📦 Build & Load Extension Locally
+
+**Prerequisites:** Ensure you have [Node.js](https://nodejs.org/) and `npm` installed on your machine.
+
+1. **Install dependencies & build the project:**
+   Run the following commands in your terminal to install required packages and build the extension.
+   ```bash
+   npm install
+   npm run build
+   ```
+2. **Load into Chrome/Edge/Brave:**
+   - Open your browser and navigate to the extensions page (e.g., `chrome://extensions`).
+   - Enable **Developer mode** in the top right corner.
+   - Click the **"Load unpacked"** button in the top left.
+   - Select the `dist` folder generated from the build step located in the project's root directory.
+3. **Pin and Use:**
+   - Pin TabRack to your toolbar. Clicking it will save the current tab to Read Later and you can access the side panel to manage tabs!
+
 ---
 </div>
 
@@ -89,6 +117,34 @@ TabRack 是一款下一代浏览器标签页管理器，专为解决“标签页
    - **稍后阅读 (🔖)：** 保存网页同时立刻关闭当前选项卡。**高阶用法：** 固定 TabRack 图标到浏览器右上角，冲浪时遇到来不及看的网页，直接痛快地点击图标，文章立马收纳并自动关掉网页！
 
 4. **个性化设置：** 右上角齿轮图标，支持排版密度（宽松/紧凑排版）与应用语言切换设置。
+
+## 📥 从 Release 下载安装 (最推荐)
+
+1. 前往本仓库的 [Releases 发布页](../../releases)。
+2. 下载最新版本下附带的 `tabrack-extension.zip` 压缩包。
+3. 将下载的压缩包解压到您电脑上的任意文件夹中（请不要删除该解压后的文件夹）。
+4. 在浏览器地址栏输入 `chrome://extensions` 打开扩展程序管理页面。
+5. 开启页面右上角的 **开发者模式 (Developer mode)**。
+6. 点击左上角的 **加载已解压的扩展程序 (Load unpacked)**，然后选择您刚刚解压的那个文件夹目录。
+7. 在浏览器工具栏固定 TabRack，即可开始使用！
+
+## 📦 自行打包与安装 (Chrome 扩展)
+
+**环境依赖：** 请确保您的系统已安装 [Node.js](https://nodejs.org/) 与 `npm`。
+
+1. **安装依赖并打包构建：**
+   在项目根目录下打开终端，依次运行以下命令安装所需依赖项并进行打包：
+   ```bash
+   npm install
+   npm run build
+   ```
+2. **加载到浏览器 (Chrome/Edge 等)：**
+   - 在浏览器地址栏输入 `chrome://extensions` 打开扩展程序管理页面。
+   - 开启页面右上角的 **开发者模式 (Developer mode)**。
+   - 点击左上角的 **加载已解压的扩展程序 (Load unpacked)**。
+   - 选择项目目录下刚刚构建生成的 `dist` 文件夹（它包含了浏览器所需的 manifest 与静态资源）。
+3. **固定并使用：**
+   - 极度建议在浏览器工具栏处固定 TabRack，遇到稍后看的文章只需点击一下图标即可一键收录并关闭掉网页，同时侧边面板也是您最方便的标签页管理中心！
 
 ---
 </div>
