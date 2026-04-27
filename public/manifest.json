@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqbOkgxlovlnZbpcmDz5u7ACrfaSUsrn3dPsF2Dmu2h/ftql5nbID3u/Q/CMqTOKqoqvF9Z2s68YFWvkcv6ITng82Rr/SBW8wCL5fGh9P+c5uxzEM09gNPxLt2zXEhqeInHOi5IMkUMD+34zWgshw4CqRcZi6R+aSWUFY0DJE8MrX5pRh74GgQOPE0ojyhegZhzSlZbWi8pHdOae6v25iQc6H9ijEA7Bm6Vv2/6/eyKX1TbLsyM/YIkunm9/pIfA9CG9c+ol1HNANPtZjvfEtuPmdlwEWouXNJ65KS/j2NDoX9kL4LtUBkZ26XkuuJwmpF7OaTPI3wicOLPitpXzbvQIDAQAB",
   "name": "TabRack",
   "version": "1.0.0",
   "description": "Manage tabs, save memory, and read smarter with AI.",

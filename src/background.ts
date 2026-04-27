@@ -68,7 +68,7 @@ async function saveToReadLater(tabId: number) {
   
   if (existing) {
     const isZh = chrome.i18n.getUILanguage().toLowerCase().startsWith('zh');
-    const msg = isZh ? '已在稍后阅读中' : 'Already in read later';
+    const msg = isZh ? '该页面已在稍后阅读列表中，无需重复添加' : 'This page is already saved to your Read Later list.';
     chrome.scripting.executeScript({
       target: { tabId },
       func: (message) => {
@@ -105,17 +105,27 @@ async function saveToReadLater(tabId: number) {
     addedAt: Date.now()
   };
 
-  const { readLaterQueue = [] } = await chrome.storage.local.get('readLaterQueue') as { readLaterQueue: any[] };
-  
-  // Deduplicate in queue before pushing to DB sync
-  const existingIndex = readLaterQueue.findIndex(item => item.url === tab.url);
-  if (existingIndex >= 0) {
-    readLaterQueue[existingIndex] = newItem;
+  if (navigator.locks) {
+    await navigator.locks.request('readLaterSync', async () => {
+      const { readLaterQueue = [] } = await chrome.storage.local.get('readLaterQueue') as { readLaterQueue: any[] };
+      const existingIndex = readLaterQueue.findIndex(item => item.url === tab.url);
+      if (existingIndex >= 0) {
+        readLaterQueue[existingIndex] = newItem;
+      } else {
+        readLaterQueue.push(newItem);
+      }
+      await chrome.storage.local.set({ readLaterQueue });
+    });
   } else {
-    readLaterQueue.push(newItem);
+    const { readLaterQueue = [] } = await chrome.storage.local.get('readLaterQueue') as { readLaterQueue: any[] };
+    const existingIndex = readLaterQueue.findIndex(item => item.url === tab.url);
+    if (existingIndex >= 0) {
+      readLaterQueue[existingIndex] = newItem;
+    } else {
+      readLaterQueue.push(newItem);
+    }
+    await chrome.storage.local.set({ readLaterQueue });
   }
-
-  await chrome.storage.local.set({ readLaterQueue });
 
   await chrome.tabs.remove(tabId);
 }

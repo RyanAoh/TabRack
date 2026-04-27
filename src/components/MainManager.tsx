@@ -139,27 +139,30 @@ export default function MainManager() {
   useEffect(() => {
     if (isExtension) {
       const syncQueue = async () => {
-        const result = await chrome.storage.local.get('readLaterQueue') as { readLaterQueue?: any[] };
-        const readLaterQueue = result.readLaterQueue || [];
-        if (readLaterQueue.length > 0) {
-          for (const item of readLaterQueue) {
-            const normUrl = normalizeUrl(item.url);
-            
-            // Look for existing by exact url OR normalized url just to be safe
-            const allExisting = await db.readLater.toArray();
-            const existing = allExisting.find(e => normalizeUrl(e.url) === normUrl || e.url === item.url);
-            
-            if (!existing) {
-              await db.readLater.add(item);
-            } else if (existing.id !== undefined) {
-              await db.readLater.update(existing.id, {
-                scrollPercentage: item.scrollPercentage,
-                addedAt: item.addedAt
-              });
+        if (!navigator.locks) return;
+        await navigator.locks.request('readLaterSync', async () => {
+          const result = await chrome.storage.local.get('readLaterQueue') as { readLaterQueue?: any[] };
+          const readLaterQueue = result.readLaterQueue || [];
+          if (readLaterQueue.length > 0) {
+            for (const item of readLaterQueue) {
+              const normUrl = normalizeUrl(item.url);
+              
+              // Look for existing by exact url OR normalized url just to be safe
+              const allExisting = await db.readLater.toArray();
+              const existing = allExisting.find(e => normalizeUrl(e.url) === normUrl || e.url === item.url);
+              
+              if (!existing) {
+                await db.readLater.add(item);
+              } else if (existing.id !== undefined) {
+                await db.readLater.update(existing.id, {
+                  scrollPercentage: item.scrollPercentage,
+                  addedAt: item.addedAt
+                });
+              }
             }
+            await chrome.storage.local.set({ readLaterQueue: [] });
           }
-          await chrome.storage.local.set({ readLaterQueue: [] });
-        }
+        });
       };
 
       syncQueue();
@@ -695,30 +698,6 @@ export default function MainManager() {
             </div>
 
             <div className="border-t border-border mt-2 pt-4">
-              <h4 className="text-sm font-semibold mb-1">{t('data_backup') || 'Data Backup & Restore'}</h4>
-              <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{t('data_backup_desc')}</p>
-              
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button variant="outline" className="flex-1 text-xs h-9 flex items-center gap-2 bg-background hover:bg-muted" onClick={handleExportData}>
-                  <Download className="w-3.5 h-3.5" />
-                  {t('export_data') || 'Export Data'}
-                </Button>
-                
-                <Button variant="outline" className="flex-1 text-xs h-9 flex items-center gap-2 bg-background hover:bg-muted" onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="w-3.5 h-3.5" />
-                  {t('import_data') || 'Import Data'}
-                </Button>
-                <input 
-                  type="file" 
-                  accept=".json" 
-                  ref={fileInputRef} 
-                  onChange={handleImportData} 
-                  className="hidden" 
-                />
-              </div>
-            </div>
-
-            <div className="border-t border-border mt-2 pt-4">
               <h4 className="text-sm font-semibold mb-3">{t('ai_engine_config') || 'AI Engine Configuration'}</h4>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -781,6 +760,30 @@ export default function MainManager() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            <div className="border-t border-border mt-2 pt-4">
+              <h4 className="text-sm font-semibold mb-1">{t('data_backup') || 'Data Backup & Restore'}</h4>
+              <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{t('data_backup_desc')}</p>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button variant="outline" className="flex-1 text-xs h-9 flex items-center gap-2 bg-background hover:bg-muted" onClick={handleExportData}>
+                  <Download className="w-3.5 h-3.5" />
+                  {t('export_data') || 'Export Data'}
+                </Button>
+                
+                <Button variant="outline" className="flex-1 text-xs h-9 flex items-center gap-2 bg-background hover:bg-muted" onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="w-3.5 h-3.5" />
+                  {t('import_data') || 'Import Data'}
+                </Button>
+                <input 
+                  type="file" 
+                  accept=".json" 
+                  ref={fileInputRef} 
+                  onChange={handleImportData} 
+                  className="hidden" 
+                />
               </div>
             </div>
           </div>
