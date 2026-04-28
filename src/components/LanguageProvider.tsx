@@ -16,6 +16,10 @@ const translations = {
     settings_desc: 'Manage your TabRack preferences.',
     language: 'Language',
     language_desc: 'Interface language',
+    theme: 'Theme',
+    theme_desc: 'Application theme',
+    theme_light: 'Light',
+    theme_dark: 'Dark',
     system_default: 'System Default',
     view_mode: 'Default View Mode',
     view_mode_desc: 'Choose how tabs are displayed',
@@ -30,7 +34,9 @@ const translations = {
     slept_tabs: 'Slept',
     all_tabs: 'All Tabs',
     read_later: 'Read Later',
-    already_in_read_later: 'This page is already saved to your Read Later list.',
+    added_to_read_later: 'Added to Read Later',
+    category_updated: 'Category updated to {category}',
+    already_in_read_later: 'This page is already saved to your Read Later list. Progress updated.',
     window: 'Window',
     close_all_tabs: 'Close all tabs',
     close_duplicate_tabs: 'Close Duplicate Tabs?',
@@ -45,6 +51,8 @@ const translations = {
     closed_domain_tabs: 'Closed {count} tabs from {domain}',
     kept_one_tab_toast: 'Kept 1 tab, closed {count} for {domain}',
     memory_freed: 'Freed up memory. {active} active, {slept} slept',
+    memory_release_confirm: 'Are you sure you want to release memory? This will put all inactive tabs to sleep.',
+    memory_release_confirm_title: 'Release Memory?',
     dashboard_soon: 'Dashboard coming soon...',
     saving_session: 'Saving session...',
     discarding_tabs: 'Discarding inactive tabs...',
@@ -83,6 +91,8 @@ const translations = {
     import_data: 'Import Data',
     import_success: 'Data imported successfully',
     import_failed: 'Failed to import data',
+    update_to: 'Update to {version}',
+    update: 'Update',
   },
   zh: {
     title: 'TabRack',
@@ -96,7 +106,11 @@ const translations = {
     settings_desc: '管理您的 TabRack 偏好设置。',
     language: '显示语言',
     language_desc: '界面显示的语言',
-    system_default: '跟随系统 (System)',
+    theme: '主题模式',
+    theme_desc: '深色 / 浅色模式设置',
+    theme_light: '浅色',
+    theme_dark: '深色',
+    system_default: '跟随系统',
     view_mode: '默认视图模式',
     view_mode_desc: '选择标签页列表的显示密度',
     group_mode: '默认聚合模式',
@@ -110,7 +124,9 @@ const translations = {
     slept_tabs: '已休眠',
     all_tabs: '所有标签页',
     read_later: '稍后阅读',
-    already_in_read_later: '该页面已在稍后阅读列表中，无需重复添加',
+    added_to_read_later: '已添加到稍后阅读',
+    category_updated: '已更新分类至 {category}',
+    already_in_read_later: '该页面已在稍后阅读列表中，进度已更新',
     window: '窗口',
     close_all_tabs: '关闭所有标签页',
     close_duplicate_tabs: '关闭重复的标签页？',
@@ -125,6 +141,8 @@ const translations = {
     closed_domain_tabs: '已从 {domain} 关闭了 {count} 个标签页',
     kept_one_tab_toast: '已在 {domain} 仅保留 1 个标签，清理了 {count} 个',
     memory_freed: '内存已释放。{active} 活跃，{slept} 休眠',
+    memory_release_confirm: '确定要释放内存吗？此操作将休眠所有不活跃的标签页。',
+    memory_release_confirm_title: '释放内存？',
     dashboard_soon: '仪表盘功能即将推出...',
     saving_session: '正在保存会话...',
     discarding_tabs: '正在休眠不活跃的标签页...',
@@ -163,6 +181,8 @@ const translations = {
     import_data: '导入恢复',
     import_success: '数据导入成功',
     import_failed: '导入数据失败',
+    update_to: '发现新版本: {version}',
+    update: '更新',
   }
 };
 
@@ -188,6 +208,8 @@ type Translations = typeof translations.en & {
   import_data?: string;
   import_success?: string;
   import_failed?: string;
+  update_to?: string;
+  update?: string;
 };
 type TranslationKey = keyof Translations;
 

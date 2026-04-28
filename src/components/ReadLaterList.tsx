@@ -119,11 +119,11 @@ export function ReadLaterList({ searchQuery = '', hideFilters = false, viewMode 
   return (
     <div className="flex flex-col gap-6 w-full max-w-full">
       {!hideFilters && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+        <div className={cn("flex gap-2 pb-2", viewMode === 'compact' ? "flex-wrap" : "items-center overflow-x-auto scrollbar-none")}>
           <Button
             variant={activeFilter === 'all' ? 'default' : 'secondary'}
             size="sm"
-            className="h-8 rounded-full px-4 text-[13px] whitespace-nowrap shrink-0"
+            className={cn("h-8 rounded-full px-4 text-[13px] whitespace-nowrap", viewMode !== 'compact' && "shrink-0")}
             onClick={() => setActiveFilter('all')}
           >
             {resolvedLanguage === 'zh' ? '全部' : 'All'}
@@ -137,7 +137,7 @@ export function ReadLaterList({ searchQuery = '', hideFilters = false, viewMode 
                 key={category}
                 variant={activeFilter === category ? 'default' : 'secondary'}
                 size="sm"
-                className={cn("h-8 rounded-full px-4 text-[13px] whitespace-nowrap shrink-0", activeFilter !== category && "bg-muted/50 hover:bg-muted")}
+                className={cn("h-8 rounded-full px-4 text-[13px] whitespace-nowrap", viewMode !== 'compact' && "shrink-0", activeFilter !== category && "bg-muted/50 hover:bg-muted")}
                 onClick={() => setActiveFilter(category)}
               >
                 {t(category as any)}

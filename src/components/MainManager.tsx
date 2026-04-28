@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn, normalizeUrl } from '@/lib/utils';
 import { useTabs } from '@/src/hooks/useTabs';
 import { TabItem } from '@/src/components/TabItem';
@@ -6,6 +7,7 @@ import { ReadLaterList } from '@/src/components/ReadLaterList';
 // CommandPalette removed
 import { ModeToggle } from '@/src/components/ModeToggle';
 import { useLanguage } from '@/src/components/LanguageProvider';
+import { useTheme } from '@/src/components/ThemeProvider';
 import { db } from '@/src/lib/db';
 import { getAIConfig, saveAIConfig, AIConfig, AIProvider } from '@/src/lib/ai';
 import { 
@@ -29,30 +31,44 @@ import {
   X,
   Github,
   Download,
-  Upload
+  Upload,
+  AlertCircle
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useCategories } from '@/src/hooks/useCategories';
+import pkg from '@/package.json';
 
 export default function MainManager() {
   const { tabs, closeTab, focusTab, isExtension } = useTabs();
   const { t, language, resolvedLanguage, setLanguage } = useLanguage();
+  const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewModeState] = useState<'compact' | 'expanded'>('expanded');
   const [dedupeDialogOpen, setDedupeDialogOpen] = useState(false);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [duplicateTabs, setDuplicateTabs] = useState<typeof tabs>([]);
   const [selectedDedupeIds, setSelectedDedupeIds] = useState<Set<number>>(new Set());
   const [groupMode, setGroupModeState] = useState<'none' | 'base' | 'full'>('none');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiConfig, setAiConfig] = useState<AIConfig>(getAIConfig());
+  const [aiStatusLabel, setAiStatusLabel] = useState('Checking AI capabilities...');
+  const [hasUpdate, setHasUpdate] = useState(false);
+  const [latestVersion, setLatestVersion] = useState('');
   const { categories, updateCategories } = useCategories();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Sorting snapshot refs
+  const groupOrderRef = useRef<string[]>([]);
+  const lastGroupMode = useRef(groupMode);
+  const lastSearchQuery = useRef(searchQuery);
+  const lastTabCount = useRef(tabs.length); // Use total tabs length to detect additions
 
   const handleExportData = async () => {
     try {
@@ -116,6 +132,69 @@ export default function MainManager() {
     }
   }, []);
 
+  // Update AI status label based on config
+  useEffect(() => {
+    if (aiConfig.provider === 'nano') {
+      if (typeof window !== 'undefined' && (window as any).ai?.textModel) {
+        setAiStatusLabel('Gemini Nano Ready - Chrome AI enabled');
+      } else {
+        setAiStatusLabel('Gemini Nano Unavailable - Will fallback to Cloud');
+      }
+    } else if (aiConfig.provider === 'gemini_cloud') {
+      setAiStatusLabel('Google Gemini Cloud (API) enabled');
+    } else if (aiConfig.provider === 'custom_cloud') {
+      setAiStatusLabel('Custom Cloud API enabled');
+    }
+  }, [aiConfig.provider]);
+
+  // Check for updates from GitHub Release
+  useEffect(() => {
+    async function checkUpdate() {
+      try {
+        const res = await fetch('https://api.github.com/repos/RyanAoh/TabRack/releases/latest', {
+          headers: { 'Accept': 'application/vnd.github.v3+json' },
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const tag = data.tag_name;
+          if (tag) {
+            const latestVersionNumber = tag.replace(/^v/, '');
+            
+            const currentAppVersion = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) 
+              ? chrome.runtime.getManifest().version 
+              : pkg.version;
+
+            // Compare semantic versions
+            const v1 = latestVersionNumber.split('.').map(Number);
+            const v2 = currentAppVersion.split('.').map(Number);
+            let isNewer = false;
+            
+            for (let i = 0; i < Math.max(v1.length, v2.length); i++) {
+              const p1 = v1[i] || 0;
+              const p2 = v2[i] || 0;
+              if (p1 > p2) {
+                isNewer = true;
+                break;
+              }
+              if (p1 < p2) {
+                break;
+              }
+            }
+
+            if (isNewer) {
+              setHasUpdate(true);
+              setLatestVersion(tag);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to check for updates', e);
+      }
+    }
+    checkUpdate();
+  }, []);
+
   const setViewMode = (mode: 'compact' | 'expanded') => {
     setViewModeState(mode);
     localStorage.setItem('tabrack_view_mode', mode);
@@ -152,11 +231,14 @@ export default function MainManager() {
               const existing = allExisting.find(e => normalizeUrl(e.url) === normUrl || e.url === item.url);
               
               if (!existing) {
-                await db.readLater.add(item);
+                if (!item.isUpdateOnly) {
+                  await db.readLater.add(item);
+                }
               } else if (existing.id !== undefined) {
                 await db.readLater.update(existing.id, {
                   scrollPercentage: item.scrollPercentage,
-                  addedAt: item.addedAt
+                  // Don't modify addedAt for a simple scroll update so it doesn't jump to the top unless explicitly re-added
+                  addedAt: item.isUpdateOnly ? existing.addedAt : item.addedAt
                 });
               }
             }
@@ -241,7 +323,12 @@ export default function MainManager() {
     setSelectedDedupeIds(new Set());
   };
 
-  const handleDiscard = async () => {
+  const handleDiscard = () => {
+    setDiscardDialogOpen(true);
+  };
+
+  const confirmDiscard = async () => {
+    setDiscardDialogOpen(false);
     setSearchQuery('');
     setActiveTab('active');
     if (isExtension) {
@@ -295,26 +382,26 @@ export default function MainManager() {
   return (
     <div className="flex flex-col h-screen w-full bg-background overflow-hidden select-none">
       {/* Header */}
-      <header className="h-[64px] shrink-0 border-b border-border bg-card flex items-center justify-between px-6">
-        <div className="flex items-center gap-3 text-primary font-bold text-xl">
-          <Layers className="w-6 h-6" />
-          <span>{t('title')}</span>
+      <header className="h-[64px] shrink-0 border-b border-border bg-card flex items-center justify-between px-3 md:px-6 gap-2">
+        <div className="flex items-center gap-2 md:gap-3 text-primary font-bold text-xl shrink-0">
+          <Layers className="w-5 h-5 md:w-6 md:h-6 shrink-0" />
+          <span className="hidden sm:inline-block md:hidden lg:inline-block xl:inline-block">{t('title')}</span>
         </div>
 
-        <div className="flex-1 flex justify-center px-4 max-w-2xl">
-          <div className="w-full max-w-[400px] relative group h-10 bg-muted/50 focus-within:bg-card border border-border/50 focus-within:border-border transition-colors rounded-md flex items-center px-3 gap-2">
-            <Search className="w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors shrink-0" />
+        <div className="flex-1 flex justify-center px-1 md:px-4 max-w-2xl min-w-0">
+          <div className="w-full max-w-[400px] relative group h-9 md:h-10 bg-muted/50 focus-within:bg-card border border-border/50 focus-within:border-border transition-colors rounded-md flex items-center px-2 md:px-3 gap-1.5 md:gap-2">
+            <Search className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground group-focus-within:text-primary transition-colors shrink-0" />
             <input 
               placeholder={t('search_placeholder')} 
-              className="flex-1 bg-transparent border-0 focus:outline-none text-sm h-full w-full"
+              className="flex-1 bg-transparent border-0 focus:outline-none text-xs md:text-sm h-full w-full min-w-0"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-4 text-right">
+        <div className="flex items-center gap-1.5 md:gap-6 shrink-0">
+          <div className="hidden sm:flex items-center gap-4 text-right">
             <div className="flex flex-col items-end">
               <span className="text-sm font-semibold text-green-500">{tabs.filter(t => t.active || !t.discarded).length}</span>
               <span className="text-[10px] text-muted-foreground">{t('active_tabs')}</span>
@@ -325,13 +412,25 @@ export default function MainManager() {
             </div>
           </div>
           
-          <div className="flex items-center gap-1 ml-4 border-l border-border pl-4">
-            <a href="https://github.com/RyanAoh/TabRack" target="_blank" rel="noopener noreferrer">
+          <div className="flex items-center gap-1 sm:ml-4 sm:border-l sm:border-border sm:pl-4">
+            <a 
+              href="https://github.com/RyanAoh/TabRack" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (isExtension && chrome?.tabs?.create) {
+                  e.preventDefault();
+                  chrome.tabs.create({ url: "https://github.com/RyanAoh/TabRack" });
+                }
+              }}
+            >
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Star on GitHub">
                 <Github className="h-4 w-4" />
               </Button>
             </a>
-            <ModeToggle />
+            <div className="hidden xs:block">
+              <ModeToggle />
+            </div>
             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title={t('settings')} onClick={() => setSettingsOpen(true)}>
               <Settings className="h-4 w-4" />
             </Button>
@@ -374,17 +473,19 @@ export default function MainManager() {
             {filteredTabs.length > 0 && (
               <div className="mb-8">
                 <div className="text-xs font-semibold text-muted-foreground mb-4 uppercase tracking-wider">{t('all_tabs')}</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
-                  {filteredTabs.map((tab) => (
-                    <TabItem 
-                      key={tab.id} 
-                      tab={tab} 
-                      onClose={closeTab} 
-                      onFocus={focusTab}
-                      compact={isSidePanel || viewMode === 'compact'} 
-                    />
-                  ))}
-                </div>
+                <motion.div layout className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+                  <AnimatePresence mode="popLayout">
+                    {filteredTabs.map((tab) => (
+                      <TabItem 
+                        key={tab.id} 
+                        tab={tab} 
+                        onClose={closeTab} 
+                        onFocus={focusTab}
+                        compact={isSidePanel || viewMode === 'compact'} 
+                      />
+                    ))}
+                  </AnimatePresence>
+                </motion.div>
               </div>
             )}
             <div>
@@ -415,16 +516,17 @@ export default function MainManager() {
 
         <TabsContent value="active" className="flex-1 overflow-hidden mt-4">
           <ScrollArea className="h-full pr-4 pb-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {(() => {
-                if (filteredTabs.length === 0) {
-                  return (
-                    <div className="col-span-full py-8 text-center text-muted-foreground">
-                      <Layers className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                      <p className="text-xs">{t('no_tabs')}</p>
-                    </div>
-                  );
-                }
+            <motion.div layout className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <AnimatePresence mode="popLayout">
+                {(() => {
+                  if (filteredTabs.length === 0) {
+                    return (
+                      <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="col-span-full py-8 text-center text-muted-foreground">
+                        <Layers className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                        <p className="text-xs">{t('no_tabs')}</p>
+                      </motion.div>
+                    );
+                  }
 
                 if (groupMode !== 'none') {
                   const groups: Record<string, typeof filteredTabs> = {};
@@ -457,10 +559,39 @@ export default function MainManager() {
                     groups[domain].push(tab);
                   });
 
-                  return Object.entries(groups)
-                    .sort((a, b) => b[1].length - a[1].length)
-                    .map(([domain, groupTabs]) => (
-                      <div key={domain} className="bg-card border border-border rounded-xl flex flex-col overflow-hidden shadow-sm h-fit">
+                  const newDomains = Object.keys(groups);
+                  const currentSorted = newDomains.sort((a, b) => groups[b].length - groups[a].length);
+                  
+                  let order = groupOrderRef.current;
+                  if (groupMode !== lastGroupMode.current || searchQuery !== lastSearchQuery.current || tabs.length > lastTabCount.current || order.length === 0) {
+                    order = currentSorted;
+                    groupOrderRef.current = currentSorted;
+                  } else {
+                    const missing = currentSorted.filter(d => !order.includes(d));
+                    if (missing.length > 0) {
+                      order = [...order, ...missing];
+                      groupOrderRef.current = order;
+                    }
+                  }
+                  
+                  lastGroupMode.current = groupMode;
+                  lastSearchQuery.current = searchQuery;
+                  lastTabCount.current = tabs.length;
+
+                  return order
+                    .filter(domain => groups[domain])
+                    .map((domain) => {
+                      const groupTabs = groups[domain];
+                      return (
+                      <motion.div 
+                        layout
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ duration: 0.2 }}
+                        key={domain} 
+                        className="bg-card border border-border rounded-xl flex flex-col overflow-hidden shadow-sm h-fit"
+                      >
                         <div className="px-4 py-3 border-b border-border bg-[#fcfcfd] dark:bg-[#151a23] flex justify-between items-center group">
                           <span className="text-[13px] font-semibold text-foreground truncate pr-2" title={domain}>{domain}</span>
                           <div className="flex items-center gap-2">
@@ -488,18 +619,21 @@ export default function MainManager() {
                           </div>
                         </div>
                         <div className="p-2 flex flex-col gap-[2px]">
-                          {groupTabs.map(tab => (
-                            <TabItem 
-                              key={tab.id} 
-                              tab={tab} 
-                              onClose={closeTab} 
-                              onFocus={focusTab}
-                              compact={isSidePanel || viewMode === 'compact'} 
-                            />
-                          ))}
+                          <AnimatePresence mode="popLayout">
+                            {groupTabs.map(tab => (
+                              <TabItem 
+                                key={tab.id} 
+                                tab={tab} 
+                                onClose={closeTab} 
+                                onFocus={focusTab}
+                                compact={isSidePanel || viewMode === 'compact'} 
+                              />
+                            ))}
+                          </AnimatePresence>
                         </div>
-                      </div>
-                    ));
+                      </motion.div>
+                      );
+                    });
                 }
 
                 // Default: Group by Window
@@ -510,7 +644,15 @@ export default function MainManager() {
                 });
 
                 return Object.entries(windows).map(([windowId, windowTabs], index) => (
-                  <div key={windowId} className="bg-card border border-border rounded-xl flex flex-col overflow-hidden shadow-sm h-fit">
+                  <motion.div 
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    key={windowId} 
+                    className="bg-card border border-border rounded-xl flex flex-col overflow-hidden shadow-sm h-fit"
+                  >
                     <div className="px-4 py-3 border-b border-border bg-[#fcfcfd] dark:bg-[#151a23] flex justify-between items-center group">
                       <span className="text-[13px] font-semibold text-foreground">{t('window')} {index + 1}</span>
                       <div className="flex items-center gap-2">
@@ -527,20 +669,23 @@ export default function MainManager() {
                       </div>
                     </div>
                     <div className="p-2 flex flex-col gap-[2px]">
-                      {windowTabs.map(tab => (
-                        <TabItem 
-                          key={tab.id} 
-                          tab={tab} 
-                          onClose={closeTab} 
-                          onFocus={focusTab}
-                          compact={isSidePanel || viewMode === 'compact'} 
-                        />
-                      ))}
+                      <AnimatePresence mode="popLayout">
+                        {windowTabs.map(tab => (
+                          <TabItem 
+                            key={tab.id} 
+                            tab={tab} 
+                            onClose={closeTab} 
+                            onFocus={focusTab}
+                            compact={isSidePanel || viewMode === 'compact'} 
+                          />
+                        ))}
+                      </AnimatePresence>
                     </div>
-                  </div>
+                  </motion.div>
                 ));
               })()}
-            </div>
+              </AnimatePresence>
+            </motion.div>
           </ScrollArea>
         </TabsContent>
 
@@ -553,13 +698,27 @@ export default function MainManager() {
       )}
 
       {/* Footer Info */}
-      <footer className="h-10 shrink-0 bg-card border-t border-border px-6 flex items-center justify-between text-xs text-muted-foreground">
-        <div className="flex items-center gap-1.5 text-[#7c3aed] font-medium">
-          <Zap className="w-3.5 h-3.5 fill-current" />
-          <span>Gemini Nano Ready - AI Features enabled</span>
+      <footer className="h-10 shrink-0 bg-card border-t border-border px-6 flex items-center justify-between text-xs text-muted-foreground w-full">
+        <div className="flex items-center gap-1.5 text-[#7c3aed] font-medium truncate min-w-0 pr-4">
+          <Zap className="w-3.5 h-3.5 fill-current shrink-0" />
+          <span className="truncate">{aiStatusLabel}</span>
         </div>
-        <div>
-          Local-First Engine v1.0.4 | {isExtension ? 'Extension Mode' : 'Dev Preview'}
+        <div className="flex items-center gap-3 shrink-0">
+          {hasUpdate && (
+            <a 
+              href="https://github.com/RyanAoh/TabRack/releases/latest" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-green-600 hover:text-green-500 transition-colors font-medium"
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t('update_to').replace('{version}', latestVersion)}</span>
+              <span className="sm:hidden">{t('update')}</span>
+            </a>
+          )}
+          <span className="opacity-70">
+            v{typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : pkg.version} | {isExtension ? 'Extension Mode' : 'Dev Preview'}
+          </span>
         </div>
       </footer>
 
@@ -603,6 +762,24 @@ export default function MainManager() {
         </DialogContent>
       </Dialog>
 
+      {/* Memory Release Dialog */}
+      <Dialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+        <DialogContent className="max-w-md pt-6 pb-4">
+          <DialogHeader className="mb-4">
+            <DialogTitle>{t('memory_release_confirm_title') || 'Release Memory?'}</DialogTitle>
+            <DialogDescription>
+              {t('memory_release_confirm') || 'Are you sure you want to release memory? This will put all inactive tabs to sleep.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscardDialogOpen(false)}>{t('cancel') || 'Cancel'}</Button>
+            <Button onClick={confirmDiscard} variant="default">
+              {t('memory_release') || 'Memory Release'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Settings Dialog */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="max-w-md bg-card max-h-[85vh] flex flex-col p-0">
@@ -613,51 +790,79 @@ export default function MainManager() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-6 py-4 px-6 overflow-y-auto">
-            <div className="flex items-center justify-between">
+            <div key={`lang-${resolvedLanguage}`} className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">{t('language')}</p>
                 <p className="text-xs text-muted-foreground">{t('language_desc')}</p>
               </div>
-              <select 
-                className="px-3 py-1.5 text-sm rounded-md border border-border bg-background text-foreground shadow-sm outline-none focus:ring-1 focus:ring-ring"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value as 'system' | 'en' | 'zh')}
-              >
-                <option value="system">{t('system_default')}</option>
-                <option value="en">English</option>
-                <option value="zh">中文</option>
-              </select>
+              <Select value={language} onValueChange={(v: 'system' | 'en' | 'zh') => setLanguage(v)}>
+                <SelectTrigger className="w-[180px] [&>span]:line-clamp-none [&>span]:truncate-none">
+                  <SelectValue>
+                    {language === 'zh' ? '中文' : language === 'en' ? 'English' : t('system_default')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="system">{t('system_default')}</SelectItem>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="zh">中文</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div key={`theme-${resolvedLanguage}`} className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('theme')}</p>
+                <p className="text-xs text-muted-foreground">{t('theme_desc')}</p>
+              </div>
+              <Select value={theme} onValueChange={(v: any) => setTheme(v)}>
+                <SelectTrigger className="w-[180px] [&>span]:line-clamp-none [&>span]:truncate-none">
+                  <SelectValue>
+                    {theme === 'light' ? t('theme_light') : theme === 'dark' ? t('theme_dark') : t('system_default')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="system">{t('system_default')}</SelectItem>
+                  <SelectItem value="light">{t('theme_light')}</SelectItem>
+                  <SelectItem value="dark">{t('theme_dark')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div key={`viewMode-${resolvedLanguage}`} className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">{t('view_mode')}</p>
                 <p className="text-xs text-muted-foreground">{t('view_mode_desc')}</p>
               </div>
-              <select 
-                className="px-3 py-1.5 text-sm rounded-md border border-border bg-background text-foreground shadow-sm outline-none focus:ring-1 focus:ring-ring"
-                value={viewMode}
-                onChange={(e) => setViewMode(e.target.value as 'compact' | 'expanded')}
-              >
-                <option value="expanded">{t('expanded')}</option>
-                <option value="compact">{t('compact')}</option>
-              </select>
+              <Select value={viewMode} onValueChange={(v: 'compact' | 'expanded') => setViewMode(v)}>
+                <SelectTrigger className="w-[180px] [&>span]:line-clamp-none [&>span]:truncate-none">
+                  <SelectValue>
+                    {viewMode === 'compact' ? t('compact') : t('expanded')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="expanded">{t('expanded')}</SelectItem>
+                  <SelectItem value="compact">{t('compact')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div key={`groupMode-${resolvedLanguage}`} className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">{t('group_mode')}</p>
                 <p className="text-xs text-muted-foreground">{t('group_mode_desc')}</p>
               </div>
-              <select 
-                className="px-3 py-1.5 text-sm rounded-md border border-border bg-background text-foreground shadow-sm outline-none focus:ring-1 focus:ring-ring"
-                value={groupMode}
-                onChange={(e) => setGroupMode(e.target.value as 'none' | 'base' | 'full')}
-              >
-                <option value="none">{t('system_default')}</option>
-                <option value="base">{t('by_base_domain')}</option>
-                <option value="full">{t('by_full_domain')}</option>
-              </select>
+              <Select value={groupMode} onValueChange={(v: 'none' | 'base' | 'full') => setGroupMode(v)}>
+                <SelectTrigger className="w-[180px] [&>span]:line-clamp-none [&>span]:truncate-none">
+                  <SelectValue>
+                    {groupMode === 'base' ? t('by_base_domain') : groupMode === 'full' ? t('by_full_domain') : t('system_default')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t('system_default')}</SelectItem>
+                  <SelectItem value="base">{t('by_base_domain')}</SelectItem>
+                  <SelectItem value="full">{t('by_full_domain')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="border-t border-border mt-2 pt-4">
@@ -700,19 +905,22 @@ export default function MainManager() {
             <div className="border-t border-border mt-2 pt-4">
               <h4 className="text-sm font-semibold mb-3">{t('ai_engine_config') || 'AI Engine Configuration'}</h4>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div key={`provider-${resolvedLanguage}`} className="flex flex-col gap-2">
                   <div>
                     <p className="text-sm font-medium">{t('provider') || 'Provider'}</p>
                   </div>
-                  <select 
-                    className="px-3 py-1.5 text-sm rounded-md border border-border bg-background text-foreground shadow-sm outline-none focus:ring-1 focus:ring-ring"
-                    value={aiConfig.provider}
-                    onChange={(e) => updateAIConfig({ provider: e.target.value as AIProvider })}
-                  >
-                    <option value="nano">{t('gemini_nano') || 'Google Gemini Nano (Local Chrome)'}</option>
-                    <option value="gemini_cloud">{t('gemini_cloud') || 'Google Gemini Cloud (API)'}</option>
-                    <option value="custom_cloud">{t('custom_cloud') || 'Custom Cloud (OpenAI Compatible)'}</option>
-                  </select>
+                  <Select value={aiConfig.provider} onValueChange={(v: AIProvider) => updateAIConfig({ provider: v })}>
+                    <SelectTrigger className="w-full [&>span]:line-clamp-none [&>span]:truncate-none">
+                      <SelectValue>
+                        {aiConfig.provider === 'nano' ? (t('gemini_nano') || 'Google Gemini Nano (Local Chrome)') : aiConfig.provider === 'custom_cloud' ? (t('custom_cloud') || 'Custom Cloud (OpenAI Compatible)') : (t('gemini_cloud') || 'Google Gemini Cloud (API)')}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="nano">{t('gemini_nano') || 'Google Gemini Nano (Local Chrome)'}</SelectItem>
+                      <SelectItem value="gemini_cloud">{t('gemini_cloud') || 'Google Gemini Cloud (API)'}</SelectItem>
+                      <SelectItem value="custom_cloud">{t('custom_cloud') || 'Custom Cloud (OpenAI Compatible)'}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 
                 {aiConfig.provider === 'gemini_cloud' && (
@@ -768,13 +976,13 @@ export default function MainManager() {
               <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{t('data_backup_desc')}</p>
               
               <div className="flex flex-col sm:flex-row gap-3">
-                <Button variant="outline" className="flex-1 text-xs h-9 flex items-center gap-2 bg-background hover:bg-muted" onClick={handleExportData}>
-                  <Download className="w-3.5 h-3.5" />
+                <Button variant="outline" className="flex-1 text-sm sm:text-xs h-12 sm:h-9 flex items-center justify-center gap-2 bg-background hover:bg-muted" onClick={handleExportData}>
+                  <Download className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   {t('export_data') || 'Export Data'}
                 </Button>
                 
-                <Button variant="outline" className="flex-1 text-xs h-9 flex items-center gap-2 bg-background hover:bg-muted" onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="w-3.5 h-3.5" />
+                <Button variant="outline" className="flex-1 text-sm sm:text-xs h-12 sm:h-9 flex items-center justify-center gap-2 bg-background hover:bg-muted" onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   {t('import_data') || 'Import Data'}
                 </Button>
                 <input 

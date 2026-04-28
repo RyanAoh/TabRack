@@ -58,7 +58,7 @@ export async function discardInactiveTabs(minutes: number = 30) {
 }
 
 // Read Later Atomic Operation
-async function saveToReadLater(tabId: number) {
+async function saveToReadLater(tabId: number, category: string = 'uncategorized') {
   const tab = await chrome.tabs.get(tabId);
   if (!tab.url) return;
 
@@ -68,22 +68,13 @@ async function saveToReadLater(tabId: number) {
   
   if (existing) {
     const isZh = chrome.i18n.getUILanguage().toLowerCase().startsWith('zh');
-    const msg = isZh ? '该页面已在稍后阅读列表中，无需重复添加' : 'This page is already saved to your Read Later list.';
-    chrome.scripting.executeScript({
-      target: { tabId },
-      func: (message) => {
-        alert(message);
-      },
-      args: [msg]
-    }).catch(e => {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: '/icon128.png', 
-          title: 'TabRack',
-          message: msg
-        });
+    const msg = isZh ? `该页面已在稍后阅读列表中，分类并进度已更新` : `This page is already saved to your Read Later list, category and progress updated.`;
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: '/icon128.png', 
+      title: 'TabRack',
+      message: msg
     });
-    return;
   }
 
   let scrollPercentage = 0;
@@ -102,6 +93,7 @@ async function saveToReadLater(tabId: number) {
     title: tab.title,
     faviconUrl: tab.favIconUrl,
     scrollPercentage,
+    tags: [category],
     addedAt: Date.now()
   };
 
@@ -144,11 +136,95 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.action === 'SAVE_READ_LATER') {
-    saveToReadLater(message.tabId).then(() => sendResponse({ success: true }));
+    saveToReadLater(message.tabId, message.category || 'uncategorized').then(() => sendResponse({ success: true }));
     return true;
+  }
+  if (message.action === 'UPDATE_SCROLL_IF_SAVED') {
+    const { url, scrollPercentage } = message;
+    if (url) {
+      if (navigator.locks) {
+        navigator.locks.request('readLaterSync', async () => {
+          const { readLaterQueue = [] } = await chrome.storage.local.get('readLaterQueue') as { readLaterQueue: any[] };
+          // For update-only, maybe we can push a partial record? 
+          // Wait, the syncQueue uses existing url match. So we can just push it with a flag 'isUpdateOnly'
+          readLaterQueue.push({
+            url,
+            scrollPercentage,
+            isUpdateOnly: true, // we need to handle this in MainManager
+            addedAt: Date.now()
+          });
+          await chrome.storage.local.set({ readLaterQueue });
+        });
+      }
+    }
+    return true;
+  }
+});
+
+// Configure Context Menus
+const DEFAULT_CATEGORIES = ['tech', 'read', 'tool', 'work', 'social', 'uncategorized'];
+
+async function setupContextMenus() {
+  chrome.contextMenus.removeAll();
+  
+  const isZh = chrome.i18n.getUILanguage().toLowerCase().startsWith('zh');
+
+  chrome.contextMenus.create({
+    id: 'save-to-category',
+    title: isZh ? '保存并选择分类...' : 'Save to Category...',
+    contexts: ['action']
+  });
+
+  const { customCategories } = await chrome.storage.local.get('customCategories');
+  const categories = Array.isArray(customCategories) ? customCategories : DEFAULT_CATEGORIES;
+
+  const getCategoryTitle = (cat: string) => {
+    if (!isZh) return cat;
+    const map: Record<string, string> = {
+      'tech': '技术与开发',
+      'read': '阅读与资讯',
+      'tool': '工具与实用程序',
+      'work': '工作与文档',
+      'social': '社交与媒体',
+      'uncategorized': '未分类'
+    };
+    return map[cat] || cat;
+  };
+
+  for (const cat of categories) {
+    chrome.contextMenus.create({
+      id: `save-cat-${cat}`,
+      parentId: 'save-to-category',
+      title: getCategoryTitle(cat),
+      contexts: ['action']
+    });
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  setupContextMenus();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  setupContextMenus();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.customCategories) {
+    setupContextMenus();
+  }
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (typeof info.menuItemId === 'string' && info.menuItemId.startsWith('save-cat-')) {
+    const category = info.menuItemId.replace('save-cat-', '');
+    if (tab && tab.id) {
+      saveToReadLater(tab.id, category);
+    }
   }
 });
 
 // Initialize
 updateTabTree();
+setupContextMenus();
 console.log('TabRack Background Service Worker Initialized');

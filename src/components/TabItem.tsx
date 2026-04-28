@@ -38,6 +38,7 @@ export function TabItem({ tab, onClose, onFocus, compact }: TabItemProps) {
     if (e) e.stopPropagation();
     try {
       let pageContent = '';
+      let scrollPercentage = 0;
       if (typeof chrome !== 'undefined' && chrome.scripting && tab.id) {
         const isRestrictedUrl = tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:') || tab.url.startsWith('chrome-extension://');
         if (!isRestrictedUrl) {
@@ -45,11 +46,16 @@ export function TabItem({ tab, onClose, onFocus, compact }: TabItemProps) {
             const results = await chrome.scripting.executeScript({
               target: { tabId: tab.id },
               func: () => {
-                return document.body ? document.body.innerText.substring(0, 3000) : '';
+                const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+                return {
+                  text: document.body ? document.body.innerText.substring(0, 3000) : '',
+                  scrollPercentage: scrollHeight > 0 ? (window.scrollY / scrollHeight) * 100 : 0
+                };
               }
             });
             if (results && results[0]?.result) {
-              pageContent = results[0].result;
+              pageContent = results[0].result.text;
+              scrollPercentage = results[0].result.scrollPercentage;
             }
           } catch (e) {
             console.warn('Could not read tab content for', tab.url, e);
@@ -61,7 +67,7 @@ export function TabItem({ tab, onClose, onFocus, compact }: TabItemProps) {
         url: tab.url,
         title: tab.title,
         faviconUrl: tab.favIconUrl,
-        scrollPercentage: 0,
+        scrollPercentage: scrollPercentage,
         addedAt: Date.now(),
         content: pageContent,
         summary: cachedSummary?.summary,
@@ -73,13 +79,30 @@ export function TabItem({ tab, onClose, onFocus, compact }: TabItemProps) {
       const existing = allExisting.find(e => normalizeUrl(e.url) === normUrl || e.url === tab.url);
       
       if (existing) {
-        toast.warning(t('already_in_read_later') || 'Already in read later');
+        if (existing.id !== undefined) {
+          const newCategoryChosen = category && category !== 'uncategorized';
+          const isCategoryDifferent = newCategoryChosen && (!existing.tags || existing.tags[0] !== category);
+          
+          await db.readLater.update(existing.id, {
+            scrollPercentage: scrollPercentage,
+            addedAt: Date.now(),
+            content: pageContent || existing.content,
+            tags: newCategoryChosen ? [category] : existing.tags
+          });
+          onClose(tab.id);
+          
+          if (isCategoryDifferent) {
+            toast.success(t('category_updated').replace('{category}', t(category as any)));
+          } else {
+             toast.success(t('already_in_read_later') || 'This page is already saved to your Read Later list.');
+          }
+        }
         return;
       }
       
       await db.readLater.add(newItem);
       onClose(tab.id);
-      toast.success(t('read_later'));
+      toast.success(t('added_to_read_later') || 'Added to Read Later');
     } catch (e) {
       console.error(e);
       toast.error(t('failed_to_save'));
@@ -127,26 +150,36 @@ export function TabItem({ tab, onClose, onFocus, compact }: TabItemProps) {
         </div>
 
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), "h-7 w-7")}
+          <div className="flex items-stretch h-7 rounded-md overflow-hidden bg-transparent border border-transparent hover:border-border/50 text-muted-foreground transition-colors group/split flex-none mr-0.5">
+            <button
+              className="px-1.5 flex items-center justify-center hover:bg-accent hover:text-accent-foreground outline-none transition-colors"
               title={t('read_later')}
+              onClick={(e) => saveToReadLater(e, 'uncategorized')}
             >
               <BookmarkPlus className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[140px]">
-              <DropdownMenuItem onClick={(e) => saveToReadLater(e, 'uncategorized')} className="text-xs">
-                <BookmarkPlus className="w-3.5 h-3.5 mr-2" />
-                {t('uncategorized')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {CATEGORIES.filter(c => c !== 'uncategorized').map(cat => (
-                 <DropdownMenuItem key={cat} onClick={(e) => saveToReadLater(e, cat)} className="text-xs">
-                   {t(cat as any)}
-                 </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </button>
+            <div className="w-[1px] bg-border opacity-0 group-hover/split:opacity-100 transition-opacity" />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="px-1 flex items-center justify-center hover:bg-accent hover:text-accent-foreground outline-none transition-colors border-none bg-transparent"
+                title={t('change_category') || 'Categories'}
+              >
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[140px]">
+                <DropdownMenuItem onClick={(e) => saveToReadLater(e as any, 'uncategorized')} className="text-xs">
+                  <BookmarkPlus className="w-3.5 h-3.5 mr-2" />
+                  {t('uncategorized')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {CATEGORIES.filter(c => c !== 'uncategorized').map(cat => (
+                  <DropdownMenuItem key={cat} onClick={(e) => saveToReadLater(e as any, cat)} className="text-xs">
+                    {t(cat as any)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <Button
             variant="ghost"
             size="icon"
